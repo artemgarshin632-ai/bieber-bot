@@ -3,490 +3,607 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
-<title>Даша на Tugella</title>
+<title>Даша шашкует</title>
 <script src="https://telegram.org/js/telegram-web-app.js"></script>
 <style>
-  * { margin: 0; padding: 0; box-sizing: border-box; touch-action: none; }
-  body {
-    background: #1a1a2e;
-    display: flex;
-    flex-direction: column;
-    align-items: center;
-    justify-content: center;
-    height: 100vh;
-    overflow: hidden;
-    font-family: 'Arial', sans-serif;
+  * { margin:0; padding:0; box-sizing:border-box; touch-action:none; }
+  body { background:#111; display:flex; align-items:center; justify-content:center; height:100vh; overflow:hidden; font-family:'Arial',sans-serif; }
+  canvas { display:block; }
+
+  /* MENU */
+  #menu {
+    position:absolute; inset:0;
+    display:flex; flex-direction:column; align-items:center; justify-content:center;
+    background:linear-gradient(180deg,#1a1a2e 0%,#16213e 60%,#0f3460 100%);
+    z-index:10;
   }
-  #wrapper { position: relative; }
-  canvas { display: block; }
-  #ui {
-    position: absolute;
-    top: 10px; left: 0; right: 0;
-    display: flex;
-    justify-content: space-between;
-    padding: 0 16px;
-    color: #fff;
-    font-size: 20px;
-    font-weight: bold;
-    text-shadow: 2px 2px 6px rgba(0,0,0,0.9);
-    pointer-events: none;
+  #menu h1 { font-size:32px; color:#fff; font-weight:900; text-shadow:0 0 20px #e74c3c; letter-spacing:2px; margin-bottom:4px; }
+  #menu .sub { font-size:16px; color:#aaa; margin-bottom:30px; }
+  #menu .car-preview { font-size:80px; margin-bottom:10px; animation: bounce 1s infinite alternate; }
+  @keyframes bounce { from{transform:translateY(0)} to{transform:translateY(-12px)} }
+  #menu .records { color:#f39c12; font-size:15px; margin-bottom:30px; }
+  #playBtn {
+    padding:16px 50px; font-size:22px; font-weight:bold;
+    background:linear-gradient(135deg,#e74c3c,#c0392b);
+    color:#fff; border:none; border-radius:50px; cursor:pointer;
+    box-shadow:0 6px 25px rgba(231,76,60,0.6);
+    transition:transform 0.1s;
   }
+  #playBtn:active { transform:scale(0.95); }
+  .hint { color:#666; font-size:13px; margin-top:20px; }
+
+  /* HUD */
+  #hud {
+    position:absolute; top:0; left:0; right:0;
+    display:none; justify-content:space-between; align-items:flex-start;
+    padding:12px 16px;
+    pointer-events:none;
+    z-index:5;
+  }
+  .hud-box {
+    background:rgba(0,0,0,0.55); border-radius:12px; padding:6px 14px;
+    color:#fff; font-size:15px; font-weight:bold;
+    border:1px solid rgba(255,255,255,0.1);
+  }
+  #speedometer {
+    position:absolute; bottom:150px; right:16px;
+    background:rgba(0,0,0,0.6); border-radius:14px; padding:8px 14px;
+    color:#2ecc71; font-size:22px; font-weight:bold;
+    border:1px solid rgba(46,204,113,0.3);
+    display:none; pointer-events:none; z-index:5;
+    text-align:center;
+  }
+  #speedometer span { display:block; font-size:10px; color:#888; font-weight:normal; }
+
+  /* CONTROLS */
   #controls {
-    position: absolute;
-    bottom: 16px;
-    left: 50%;
-    transform: translateX(-50%);
-    display: grid;
-    grid-template-columns: repeat(3, 58px);
-    grid-template-rows: repeat(2, 58px);
-    gap: 6px;
+    position:absolute; bottom:24px; left:50%; transform:translateX(-50%);
+    display:none;
+    grid-template-columns:repeat(2,80px);
+    grid-template-rows:repeat(1,70px);
+    gap:16px; z-index:5;
   }
   .btn {
-    background: rgba(255,255,255,0.18);
-    border: 2px solid rgba(255,255,255,0.4);
-    border-radius: 14px;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    font-size: 26px;
-    cursor: pointer;
-    user-select: none;
-    -webkit-user-select: none;
-    transition: background 0.1s;
+    background:rgba(255,255,255,0.15); border:2px solid rgba(255,255,255,0.35);
+    border-radius:14px; display:flex; align-items:center; justify-content:center;
+    font-size:26px; cursor:pointer; user-select:none; -webkit-user-select:none;
   }
-  .btn:active { background: rgba(255,255,255,0.4); }
-  #overlay {
-    display: none;
-    position: absolute;
-    inset: 0;
-    background: rgba(0,0,0,0.82);
-    align-items: center;
-    justify-content: center;
-    flex-direction: column;
-    color: #fff;
-    text-align: center;
-    padding: 30px;
-    border-radius: 0;
+  .btn:active { background:rgba(255,255,255,0.35); }
+
+  /* GAME OVER */
+  #gameover {
+    position:absolute; inset:0; display:none;
+    flex-direction:column; align-items:center; justify-content:center;
+    background:rgba(0,0,0,0.88); z-index:10;
   }
-  #overlay.show { display: flex; }
-  #overlay h1 { font-size: 28px; margin-bottom: 10px; }
-  #overlay p { font-size: 17px; margin: 6px 0; color: #ddd; }
-  #overlay .big { font-size: 48px; margin: 10px 0; }
+  #gameover h2 { font-size:32px; color:#e74c3c; margin-bottom:8px; }
+  #gameover .score-big { font-size:64px; color:#f39c12; font-weight:900; }
+  #gameover .label { color:#aaa; font-size:15px; margin-bottom:6px; }
+  #gameover .best { color:#2ecc71; font-size:18px; margin-bottom:24px; }
   #restartBtn {
-    margin-top: 20px;
-    padding: 14px 36px;
-    border: none;
-    border-radius: 14px;
-    background: linear-gradient(135deg, #e74c3c, #c0392b);
-    color: #fff;
-    font-size: 18px;
-    font-weight: bold;
-    cursor: pointer;
-    box-shadow: 0 4px 15px rgba(231,76,60,0.5);
+    padding:14px 44px; font-size:20px; font-weight:bold;
+    background:linear-gradient(135deg,#e74c3c,#c0392b);
+    color:#fff; border:none; border-radius:50px; cursor:pointer;
+    box-shadow:0 4px 20px rgba(231,76,60,0.5); margin-bottom:12px;
+  }
+  #menuBtn {
+    padding:10px 30px; font-size:16px;
+    background:rgba(255,255,255,0.1); color:#aaa;
+    border:1px solid rgba(255,255,255,0.2); border-radius:50px; cursor:pointer;
+  }
+
+  /* COMBO */
+  #combo {
+    position:absolute; top:50%; left:50%; transform:translate(-50%,-50%);
+    color:#f39c12; font-size:28px; font-weight:900;
+    text-shadow:0 0 20px #f39c12;
+    display:none; pointer-events:none; z-index:6;
+    transition:opacity 0.3s;
   }
 </style>
 </head>
 <body>
-<div id="wrapper">
-  <canvas id="game"></canvas>
-  <div id="ui">
-    <span>❤️ <span id="score">0</span></span>
-    <span>⏱️ <span id="timer">60</span>с</span>
-  </div>
-  <div id="controls">
-    <div></div>
-    <div class="btn" id="btnUp">⬆️</div>
-    <div></div>
-    <div class="btn" id="btnLeft">⬅️</div>
-    <div class="btn" id="btnDown">⬇️</div>
-    <div class="btn" id="btnRight">➡️</div>
-  </div>
-  <div id="overlay">
-    <div class="big">🏁</div>
-    <h1>Время вышло!</h1>
-    <p>Даша собрала сердечек:</p>
-    <div class="big" id="finalScore">0</div>
-    <button id="restartBtn">Играть снова</button>
-  </div>
+<canvas id="c"></canvas>
+
+<!-- MENU -->
+<div id="menu">
+  <div class="car-preview">🚗</div>
+  <h1>ДАША ШАШКУЕТ</h1>
+  <div class="sub">Geely Tugella · Городской симулятор</div>
+  <div class="records" id="bestDisplay">Рекорд: 0 очков</div>
+  <button id="playBtn">▶ ИГРАТЬ</button>
+  <div class="hint">Объезжай машины · Шашкуй · Набирай очки</div>
+</div>
+
+<!-- HUD -->
+<div id="hud">
+  <div class="hud-box">🏆 <span id="scoreEl">0</span></div>
+  <div class="hud-box">⏱ <span id="timerEl">60</span>с</div>
+</div>
+<div id="speedometer">
+  <div id="speedVal">0</div>
+  <span>км/ч</span>
+</div>
+<div id="combo"></div>
+
+<!-- CONTROLS -->
+<div id="controls">
+  <div class="btn" id="btnLeft">⬅️</div>
+  <div class="btn" id="btnRight">➡️</div>
+</div>
+
+<!-- GAME OVER -->
+<div id="gameover">
+  <h2>ВРЕМЯ ВЫШЛО!</h2>
+  <div class="label">Очки за шашки:</div>
+  <div class="score-big" id="finalScore">0</div>
+  <div class="best" id="finalBest"></div>
+  <button id="restartBtn">▶ ЕЩЁ РАЗ</button>
+  <button id="menuBtn">← Меню</button>
 </div>
 
 <script>
-const canvas = document.getElementById('game');
+const canvas = document.getElementById('c');
 const ctx = canvas.getContext('2d');
 
-const TILE = 72;
-const MAP_W = 11;
-const MAP_H = 15;
+// ── Resize ──────────────────────────────────────────────
+function resize() {
+  canvas.width  = Math.min(window.innerWidth, 480);
+  canvas.height = window.innerHeight;
+}
+resize();
+window.addEventListener('resize', resize);
 
-// 0=grass/building, 1=road
-const MAP = [
-  [0,0,1,1,0,0,0,1,1,0,0],
-  [0,0,1,1,0,0,0,1,1,0,0],
-  [1,1,1,1,1,1,1,1,1,1,1],
-  [1,1,1,1,1,1,1,1,1,1,1],
-  [0,0,1,1,0,0,0,1,1,0,0],
-  [0,0,1,1,0,0,0,1,1,0,0],
-  [0,0,1,1,0,0,0,1,1,0,0],
-  [1,1,1,1,1,1,1,1,1,1,1],
-  [1,1,1,1,1,1,1,1,1,1,1],
-  [0,0,1,1,0,0,0,1,1,0,0],
-  [0,0,1,1,0,0,0,1,1,0,0],
-  [0,0,1,1,0,0,0,1,1,0,0],
-  [1,1,1,1,1,1,1,1,1,1,1],
-  [1,1,1,1,1,1,1,1,1,1,1],
-  [0,0,1,1,0,0,0,1,1,0,0],
-];
+// ── Constants ───────────────────────────────────────────
+const ROAD_W   = Math.min(canvas.width, 480);
+const LANES    = 4;
+const LANE_W   = () => ROAD_W / LANES;
 
-const BLDG_COLORS = ['#d4a574','#c9b8a8','#b8c4bb','#e8d5c4','#c4b5a0'];
-const NPC_COLORS  = ['#3498db','#2ecc71','#f39c12','#9b59b6','#1abc9c','#e67e22'];
-
-let cam = {x:0, y:0};
+// ── State ───────────────────────────────────────────────
 let keys = {};
-let hearts = [];
-let npcs = [];
-let score = 0;
+let score = 0, best = +localStorage.getItem('best') || 0;
 let timeLeft = 60;
 let gameRunning = false;
-let animId = null;
 let timerInterval = null;
+let animId = null;
 
-const player = { x:0, y:0, angle:0, speed:0 };
-const PMAX = 3.8;
+// Player
+const player = {
+  x: 0, y: 0,
+  w: 36, h: 60,
+  speed: 0,         // vertical scroll speed
+  lateral: 0,       // horizontal speed
+  maxSpeed: 8,
+  lane: 1,
+};
 
-function resize() {
-  const W = Math.min(window.innerWidth, 480);
-  const H = window.innerHeight;
-  canvas.width  = W;
-  canvas.height = H;
-}
+// Camera / world scroll
+let worldY = 0;
 
-function isRoad(x, y) {
-  const tx = Math.floor(x / TILE);
-  const ty = Math.floor(y / TILE);
-  if (tx < 0 || ty < 0 || tx >= MAP_W || ty >= MAP_H) return false;
-  return MAP[ty][tx] === 1;
-}
+// Traffic
+let cars = [];
+let particles = [];
+let comboTimeout = null;
 
-// ─── Draw ──────────────────────────────────────────────
+// Road markings
+let markings = [];
 
-function drawMap() {
-  for (let r = 0; r < MAP_H; r++) {
-    for (let c = 0; c < MAP_W; c++) {
-      const wx = c * TILE - cam.x;
-      const wy = r * TILE - cam.y;
-      if (wx + TILE < 0 || wx > canvas.width || wy + TILE < 0 || wy > canvas.height) continue;
-
-      if (MAP[r][c] === 1) {
-        // Road
-        ctx.fillStyle = '#4a4a4a';
-        ctx.fillRect(wx, wy, TILE, TILE);
-
-        // Center line (dashed)
-        const isVert = r > 0 && r < MAP_H-1 && MAP[r-1][c] === 1 && MAP[r+1][c] === 1 &&
-                       (c === 0 || MAP[r][c-1] !== 1) && (c === MAP_W-1 || MAP[r][c+1] !== 1);
-        const isHorz = c > 0 && c < MAP_W-1 && MAP[r][c-1] === 1 && MAP[r][c+1] === 1 &&
-                       (r === 0 || MAP[r-1][c] !== 1) && (r === MAP_H-1 || MAP[r+1][c] !== 1);
-
-        ctx.strokeStyle = 'rgba(255,255,255,0.35)';
-        ctx.lineWidth = 2;
-        ctx.setLineDash([12, 14]);
-        if (isVert) {
-          ctx.beginPath(); ctx.moveTo(wx+TILE/2, wy); ctx.lineTo(wx+TILE/2, wy+TILE); ctx.stroke();
-        }
-        if (isHorz) {
-          ctx.beginPath(); ctx.moveTo(wx, wy+TILE/2); ctx.lineTo(wx+TILE, wy+TILE/2); ctx.stroke();
-        }
-        ctx.setLineDash([]);
-      } else {
-        // Grass
-        ctx.fillStyle = '#3d6b4f';
-        ctx.fillRect(wx, wy, TILE, TILE);
-        // Building
-        const pad = 7;
-        const bColor = BLDG_COLORS[(r * MAP_W + c) % BLDG_COLORS.length];
-        ctx.fillStyle = bColor;
-        ctx.beginPath();
-        ctx.roundRect(wx+pad, wy+pad, TILE-pad*2, TILE-pad*2, 4);
-        ctx.fill();
-        ctx.strokeStyle = 'rgba(0,0,0,0.2)';
-        ctx.lineWidth = 1;
-        ctx.stroke();
-        // Windows
-        ctx.fillStyle = 'rgba(120,180,230,0.75)';
-        for (let wi = 0; wi < 2; wi++)
-          for (let wj = 0; wj < 2; wj++)
-            ctx.fillRect(wx+pad+5+wi*20, wy+pad+5+wj*20, 13, 11);
-      }
-    }
+// ── Init markings ────────────────────────────────────────
+function initMarkings() {
+  markings = [];
+  for (let i = 0; i < 30; i++) {
+    markings.push({ y: i * 80 });
   }
 }
 
-function drawCar(x, y, angle, color, isDasha) {
-  const sx = x - cam.x;
-  const sy = y - cam.y;
-  if (sx < -60 || sx > canvas.width+60 || sy < -80 || sy > canvas.height+80) return;
+// ── Spawn traffic ────────────────────────────────────────
+const CAR_COLORS = ['#3498db','#2ecc71','#f39c12','#9b59b6','#1abc9c','#e67e22','#e74c3c','#ecf0f1','#bdc3c7'];
 
-  const W = isDasha ? 32 : 28;
-  const H = isDasha ? 52 : 46;
+function spawnCar() {
+  const lane = Math.floor(Math.random() * LANES);
+  const oncoming = lane < 2; // lanes 0,1 = oncoming; 2,3 = same direction
+  const x = LANE_W() * lane + LANE_W() / 2;
+  const y = oncoming ? -80 : canvas.height + 80;
+  const speed = oncoming
+    ? (player.speed + 2 + Math.random() * 3)   // comes toward player
+    : (player.speed - 1 - Math.random() * 2);  // same dir but slower
 
+  cars.push({
+    x, y,
+    w: 34, h: 56,
+    speed,
+    oncoming,
+    color: CAR_COLORS[Math.floor(Math.random() * CAR_COLORS.length)],
+    scored: false,
+  });
+}
+
+// ── Draw helpers ─────────────────────────────────────────
+function drawRoad() {
+  const W = canvas.width;
+  const H = canvas.height;
+
+  // Sky / city background
+  const sky = ctx.createLinearGradient(0, 0, 0, H * 0.35);
+  sky.addColorStop(0, '#0d0d1a');
+  sky.addColorStop(1, '#1a1a3e');
+  ctx.fillStyle = sky;
+  ctx.fillRect(0, 0, W, H * 0.35);
+
+  // Buildings (parallax)
+  drawBuildings();
+
+  // Road surface
+  ctx.fillStyle = '#2c2c2c';
+  ctx.fillRect(0, H * 0.3, W, H);
+
+  // Road edges
+  ctx.fillStyle = '#f39c12';
+  ctx.fillRect(0, H * 0.3, 6, H);
+  ctx.fillRect(W - 6, H * 0.3, 6, H);
+
+  // Center divider (double yellow)
+  const cx = W / 2;
+  ctx.fillStyle = '#f1c40f';
+  ctx.fillRect(cx - 3, H * 0.3, 2, H);
+  ctx.fillRect(cx + 1, H * 0.3, 2, H);
+
+  // Lane dashes
+  const dashH = 50;
+  const dashGap = 40;
+  const total = dashH + dashGap;
+  const offset = worldY % total;
+
+  ctx.fillStyle = 'rgba(255,255,255,0.45)';
+  for (let lane = 1; lane < LANES; lane++) {
+    if (lane === 2) continue; // center is yellow
+    const lx = LANE_W() * lane;
+    for (let y2 = -total + offset; y2 < H + total; y2 += total) {
+      ctx.fillRect(lx - 1, H * 0.3 + y2, 2, dashH);
+    }
+  }
+
+  // Horizon line / road perspective fade
+  const fade = ctx.createLinearGradient(0, H*0.28, 0, H*0.42);
+  fade.addColorStop(0, 'rgba(26,26,62,1)');
+  fade.addColorStop(1, 'rgba(44,44,44,0)');
+  ctx.fillStyle = fade;
+  ctx.fillRect(0, H*0.28, W, H*0.14);
+}
+
+let buildingData = null;
+function initBuildings() {
+  buildingData = [];
+  const W = canvas.width;
+  // Left side
+  let x = 0;
+  while (x < W * 0.48) {
+    const w = 25 + Math.random() * 35;
+    const h = 40 + Math.random() * 80;
+    const color = ['#1a2a4a','#2a1a3a','#1a3a2a','#2a2a1a'][Math.floor(Math.random()*4)];
+    const windows = Math.floor(Math.random() * 3) + 1;
+    buildingData.push({ x, w, h, color, windows, side:'left' });
+    x += w + 4;
+  }
+  // Right side
+  x = W * 0.52;
+  while (x < W) {
+    const w = 25 + Math.random() * 35;
+    const h = 40 + Math.random() * 80;
+    const color = ['#1a2a4a','#2a1a3a','#1a3a2a','#2a2a1a'][Math.floor(Math.random()*4)];
+    buildingData.push({ x, w, h, color, windows: Math.floor(Math.random()*3)+1, side:'right' });
+    x += w + 4;
+  }
+}
+
+function drawBuildings() {
+  if (!buildingData) return;
+  const H = canvas.height;
+  const baseY = H * 0.35;
+  const scroll = (worldY * 0.2) % 200;
+
+  buildingData.forEach(b => {
+    const y = baseY - b.h + ((scroll + b.x) % 200) * 0;
+    ctx.fillStyle = b.color;
+    ctx.fillRect(b.x, baseY - b.h, b.w, b.h);
+    // Windows
+    ctx.fillStyle = Math.random() > 0.97 ? '#ffe082' : 'rgba(100,160,220,0.3)';
+    for (let wi = 0; wi < b.windows; wi++) {
+      for (let wj = 0; wj < 3; wj++) {
+        ctx.fillRect(b.x + 4 + wi * 10, baseY - b.h + 6 + wj * 12, 7, 8);
+      }
+    }
+  });
+}
+
+function drawCarShape(x, y, w, h, color, oncoming) {
   ctx.save();
-  ctx.translate(sx, sy);
-  ctx.rotate(angle);
+  ctx.translate(x, y);
+  if (oncoming) ctx.rotate(Math.PI);
 
   // Shadow
-  ctx.fillStyle = 'rgba(0,0,0,0.25)';
-  ctx.beginPath();
-  ctx.ellipse(3, 4, W/2+2, H/2+2, 0, 0, Math.PI*2);
-  ctx.fill();
+  ctx.fillStyle = 'rgba(0,0,0,0.3)';
+  ctx.beginPath(); ctx.ellipse(2, 4, w/2+2, h/2+3, 0, 0, Math.PI*2); ctx.fill();
 
   // Body
   ctx.fillStyle = color;
-  ctx.beginPath();
-  ctx.roundRect(-W/2, -H/2, W, H, 7);
-  ctx.fill();
+  ctx.beginPath(); ctx.roundRect(-w/2, -h/2, w, h, 7); ctx.fill();
 
-  // Roof highlight
-  ctx.fillStyle = 'rgba(255,255,255,0.12)';
-  ctx.beginPath();
-  ctx.roundRect(-W/2+4, -H/2+4, W-8, H/2-4, 5);
-  ctx.fill();
+  // Roof shine
+  ctx.fillStyle = 'rgba(255,255,255,0.1)';
+  ctx.beginPath(); ctx.roundRect(-w/2+4, -h/2+4, w-8, h/2-6, 5); ctx.fill();
 
-  // Windshield front
-  ctx.fillStyle = 'rgba(160,220,255,0.85)';
-  ctx.beginPath();
-  ctx.roundRect(-W/2+4, -H/2+7, W-8, H*0.28, 3);
-  ctx.fill();
-
-  // Windshield rear
-  ctx.fillStyle = 'rgba(160,220,255,0.6)';
-  ctx.beginPath();
-  ctx.roundRect(-W/2+4, H/2-H*0.28-5, W-8, H*0.24, 3);
-  ctx.fill();
+  // Windshields
+  ctx.fillStyle = 'rgba(150,220,255,0.8)';
+  ctx.beginPath(); ctx.roundRect(-w/2+4, -h/2+8, w-8, h*0.26, 3); ctx.fill();
+  ctx.fillStyle = 'rgba(150,220,255,0.5)';
+  ctx.beginPath(); ctx.roundRect(-w/2+4, h/2-h*0.28-4, w-8, h*0.22, 3); ctx.fill();
 
   // Wheels
-  ctx.fillStyle = '#1a1a1a';
-  const wy2 = [[-W/2-5, -H/2+7], [W/2-1, -H/2+7], [-W/2-5, H/2-17], [W/2-1, H/2-17]];
-  wy2.forEach(([wx2, wy3]) => {
-    ctx.fillRect(wx2, wy3, 7, 12);
-    ctx.fillStyle = '#444';
-    ctx.fillRect(wx2+1, wy3+1, 5, 10);
-    ctx.fillStyle = '#1a1a1a';
+  ctx.fillStyle = '#111';
+  [[-w/2-5,-h/2+8],[w/2-2,-h/2+8],[-w/2-5,h/2-18],[w/2-2,h/2-18]].forEach(([wx,wy])=>{
+    ctx.fillRect(wx, wy, 7, 12);
   });
 
   // Headlights
   ctx.fillStyle = '#fffde7';
-  ctx.beginPath(); ctx.ellipse(-W/2+7, -H/2+3, 4, 3, 0, 0, Math.PI*2); ctx.fill();
-  ctx.beginPath(); ctx.ellipse( W/2-7, -H/2+3, 4, 3, 0, 0, Math.PI*2); ctx.fill();
+  ctx.beginPath(); ctx.ellipse(-w/2+7, -h/2+4, 4, 3, 0, 0, Math.PI*2); ctx.fill();
+  ctx.beginPath(); ctx.ellipse( w/2-7, -h/2+4, 4, 3, 0, 0, Math.PI*2); ctx.fill();
 
   // Taillights
   ctx.fillStyle = '#e74c3c';
-  ctx.beginPath(); ctx.ellipse(-W/2+7, H/2-3, 4, 3, 0, 0, Math.PI*2); ctx.fill();
-  ctx.beginPath(); ctx.ellipse( W/2-7, H/2-3, 4, 3, 0, 0, Math.PI*2); ctx.fill();
+  ctx.beginPath(); ctx.ellipse(-w/2+7, h/2-4, 4, 3, 0, 0, Math.PI*2); ctx.fill();
+  ctx.beginPath(); ctx.ellipse( w/2-7, h/2-4, 4, 3, 0, 0, Math.PI*2); ctx.fill();
 
-  if (isDasha) {
-    // Дашa inside
-    ctx.fillStyle = '#ffd6a0';
-    ctx.beginPath(); ctx.arc(0, -6, 9, 0, Math.PI*2); ctx.fill();
-    // Hair
-    ctx.fillStyle = '#7B3F00';
-    ctx.beginPath(); ctx.arc(0, -12, 9, Math.PI, 0); ctx.fill();
-    ctx.fillRect(-9, -14, 5, 8);
-    ctx.fillRect(4,  -14, 5, 8);
-    // Eyes
-    ctx.fillStyle = '#2c2c2c';
-    ctx.beginPath(); ctx.arc(-3.5, -7, 1.8, 0, Math.PI*2); ctx.fill();
-    ctx.beginPath(); ctx.arc( 3.5, -7, 1.8, 0, Math.PI*2); ctx.fill();
-    // Smile
-    ctx.strokeStyle = '#c0392b';
+  ctx.restore();
+}
+
+function drawPlayerCar() {
+  const x = player.x;
+  const y = player.y;
+  const w = player.w;
+  const h = player.h;
+
+  ctx.save();
+  ctx.translate(x, y);
+
+  // Тело — красная Tugella
+  ctx.fillStyle = '#c0392b';
+  ctx.beginPath(); ctx.roundRect(-w/2, -h/2, w, h, 8); ctx.fill();
+
+  // Блик
+  ctx.fillStyle = 'rgba(255,255,255,0.12)';
+  ctx.beginPath(); ctx.roundRect(-w/2+4, -h/2+4, w-8, h/2-6, 5); ctx.fill();
+
+  // Лобовое стекло
+  ctx.fillStyle = 'rgba(150,220,255,0.85)';
+  ctx.beginPath(); ctx.roundRect(-w/2+4, -h/2+8, w-8, h*0.26, 3); ctx.fill();
+  ctx.fillStyle = 'rgba(150,220,255,0.55)';
+  ctx.beginPath(); ctx.roundRect(-w/2+4, h/2-h*0.28-4, w-8, h*0.22, 3); ctx.fill();
+
+  // Колёса
+  ctx.fillStyle = '#111';
+  [[-w/2-5,-h/2+8],[w/2-2,-h/2+8],[-w/2-5,h/2-18],[w/2-2,h/2-18]].forEach(([wx,wy])=>{
+    ctx.fillRect(wx, wy, 7, 12);
+  });
+
+  // Фары
+  ctx.fillStyle = '#fffde7';
+  ctx.beginPath(); ctx.ellipse(-w/2+7, -h/2+4, 5, 3.5, 0, 0, Math.PI*2); ctx.fill();
+  ctx.beginPath(); ctx.ellipse( w/2-7, -h/2+4, 5, 3.5, 0, 0, Math.PI*2); ctx.fill();
+  // Glow
+  ctx.fillStyle = 'rgba(255,253,231,0.3)';
+  ctx.beginPath(); ctx.ellipse(-w/2+7, -h/2+4, 10, 7, 0, 0, Math.PI*2); ctx.fill();
+  ctx.beginPath(); ctx.ellipse( w/2-7, -h/2+4, 10, 7, 0, 0, Math.PI*2); ctx.fill();
+
+  // Стопы
+  ctx.fillStyle = '#e74c3c';
+  ctx.beginPath(); ctx.ellipse(-w/2+7, h/2-4, 5, 3.5, 0, 0, Math.PI*2); ctx.fill();
+  ctx.beginPath(); ctx.ellipse( w/2-7, h/2-4, 5, 3.5, 0, 0, Math.PI*2); ctx.fill();
+
+  // Даша
+  ctx.fillStyle = '#ffd6a0';
+  ctx.beginPath(); ctx.arc(0, -6, 9, 0, Math.PI*2); ctx.fill();
+  ctx.fillStyle = '#7B3F00';
+  ctx.beginPath(); ctx.arc(0, -12, 9, Math.PI, 0); ctx.fill();
+  ctx.fillRect(-9,-15, 5, 8); ctx.fillRect(4,-15, 5, 8);
+  ctx.fillStyle = '#2c2c2c';
+  ctx.beginPath(); ctx.arc(-3.5,-7, 1.8, 0, Math.PI*2); ctx.fill();
+  ctx.beginPath(); ctx.arc( 3.5,-7, 1.8, 0, Math.PI*2); ctx.fill();
+  ctx.strokeStyle='#c0392b'; ctx.lineWidth=1.5;
+  ctx.beginPath(); ctx.arc(0,-4, 3.5, 0.1, Math.PI-0.1); ctx.stroke();
+
+  // Speed lines when fast
+  if (player.speed > 5) {
+    ctx.strokeStyle = `rgba(255,255,255,${(player.speed-5)/6*0.4})`;
     ctx.lineWidth = 1.5;
-    ctx.beginPath(); ctx.arc(0, -4, 3.5, 0.1, Math.PI-0.1); ctx.stroke();
+    for (let i = 0; i < 4; i++) {
+      const lx = -w/2 + 6 + i * (w-12)/3;
+      ctx.beginPath(); ctx.moveTo(lx, h/2+4); ctx.lineTo(lx, h/2+16); ctx.stroke();
+    }
   }
 
   ctx.restore();
 }
 
-function drawHearts() {
-  hearts.forEach(h => {
-    if (h.collected) return;
-    const sx = h.x - cam.x;
-    const sy = h.y - cam.y;
-    if (sx < -30 || sx > canvas.width+30 || sy < -30 || sy > canvas.height+30) return;
-    ctx.save();
-    ctx.translate(sx, sy);
-    const t = Date.now() / 600;
-    ctx.scale(1 + 0.12*Math.sin(t + h.phase), 1 + 0.12*Math.sin(t + h.phase));
-    ctx.font = '26px Arial';
+// ── Particles ────────────────────────────────────────────
+function spawnScore(x, y, pts) {
+  particles.push({ x, y, text: '+'+pts, life:1, vy:-1.5, color: pts>10?'#f39c12':'#2ecc71' });
+}
+
+function updateParticles() {
+  particles = particles.filter(p => p.life > 0);
+  particles.forEach(p => {
+    p.y += p.vy; p.life -= 0.025;
+    ctx.globalAlpha = p.life;
+    ctx.fillStyle = p.color;
+    ctx.font = 'bold 20px Arial';
     ctx.textAlign = 'center';
-    ctx.textBaseline = 'middle';
-    ctx.fillText('❤️', 0, 0);
-    ctx.restore();
+    ctx.fillText(p.text, p.x, p.y);
+    ctx.globalAlpha = 1;
   });
 }
 
-// ─── Update ────────────────────────────────────────────
+// ── Update ───────────────────────────────────────────────
+let spawnTimer = 0;
 
-function spawnHearts() {
-  hearts = [];
-  let attempts = 0;
-  while (hearts.length < 18 && attempts < 500) {
-    attempts++;
-    const x = (0.5 + Math.random() * (MAP_W - 1)) * TILE;
-    const y = (0.5 + Math.random() * (MAP_H - 1)) * TILE;
-    if (isRoad(x, y)) hearts.push({ x, y, collected: false, phase: Math.random()*Math.PI*2 });
-  }
-}
+function update() {
+  // Auto-accelerate
+  const latSpeed = 3.5;
+  player.speed = Math.min(player.speed + 0.012, player.maxSpeed);
 
-function spawnNPCs() {
-  npcs = [];
-  const starts = [
-    { x: 2.5*TILE, y: 2*TILE,  angle: Math.PI/2  },
-    { x: 3.5*TILE, y: 5*TILE,  angle: -Math.PI/2 },
-    { x: 7.5*TILE, y: 3*TILE,  angle: Math.PI/2  },
-    { x: 8.5*TILE, y: 8*TILE,  angle: -Math.PI/2 },
-    { x: 5*TILE,   y: 2.5*TILE,angle: 0          },
-    { x: 4*TILE,   y: 7.5*TILE,angle: Math.PI    },
-    { x: 8*TILE,   y: 12.5*TILE,angle: Math.PI   },
-  ];
-  starts.forEach((s, i) => {
-    npcs.push({ ...s, speed: 1.2 + Math.random()*0.8, color: NPC_COLORS[i % NPC_COLORS.length] });
-  });
-}
+  if (keys['left']  || keys['ArrowLeft'])  player.lateral = Math.max(player.lateral - 0.5, -latSpeed);
+  else if (keys['right'] || keys['ArrowRight']) player.lateral = Math.min(player.lateral + 0.5, latSpeed);
+  else player.lateral *= 0.8;
 
-function updatePlayer() {
-  const turn  = 0.055;
-  const accel = 0.14;
-  const fric  = 0.91;
+  player.x += player.lateral;
+  player.x = Math.max(player.w/2 + 6, Math.min(player.x, canvas.width - player.w/2 - 6));
 
-  if (keys['left']  || keys['ArrowLeft'])  player.angle -= turn * (Math.abs(player.speed)/PMAX * 0.7 + 0.3);
-  if (keys['right'] || keys['ArrowRight']) player.angle += turn * (Math.abs(player.speed)/PMAX * 0.7 + 0.3);
-  if (keys['up']    || keys['ArrowUp'])    player.speed  = Math.min(player.speed + accel, PMAX);
-  else if (keys['down'] || keys['ArrowDown']) player.speed = Math.max(player.speed - accel, -PMAX/2);
-  else player.speed *= fric;
+  worldY += player.speed;
 
-  const nx = player.x + Math.sin(player.angle) * player.speed;
-  const ny = player.y - Math.cos(player.angle) * player.speed;
+  // Speed display
+  document.getElementById('speedVal').textContent = Math.round(player.speed / player.maxSpeed * 180);
 
-  if (isRoad(nx, player.y)) player.x = nx; else player.speed *= -0.4;
-  if (isRoad(player.x, ny)) player.y = ny; else player.speed *= -0.4;
+  // Spawn traffic
+  spawnTimer++;
+  const spawnRate = Math.max(30, 80 - player.speed * 5);
+  if (spawnTimer > spawnRate) { spawnCar(); spawnTimer = 0; }
 
-  player.x = Math.max(TILE*0.3, Math.min(player.x, (MAP_W-0.3)*TILE));
-  player.y = Math.max(TILE*0.3, Math.min(player.y, (MAP_H-0.3)*TILE));
+  // Update & cull cars
+  cars = cars.filter(car => {
+    const relSpeed = car.oncoming
+      ? player.speed + car.speed
+      : player.speed - car.speed;
+    car.y += car.oncoming ? relSpeed : -relSpeed;
 
-  cam.x = Math.max(0, Math.min(player.x - canvas.width/2,  MAP_W*TILE - canvas.width));
-  cam.y = Math.max(0, Math.min(player.y - canvas.height/2, MAP_H*TILE - canvas.height));
-
-  // Collect hearts
-  hearts.forEach(h => {
-    if (!h.collected && Math.hypot(h.x - player.x, h.y - player.y) < 28) {
-      h.collected = true;
-      score++;
-      document.getElementById('score').textContent = score;
-      if (hearts.every(h2 => h2.collected)) spawnHearts();
-    }
-  });
-
-  // NPC collision
-  npcs.forEach(npc => {
-    if (Math.hypot(npc.x - player.x, npc.y - player.y) < 36) {
-      player.speed = -1.5;
-    }
-  });
-}
-
-function updateNPCs() {
-  npcs.forEach(npc => {
-    const nx = npc.x + Math.sin(npc.angle) * npc.speed;
-    const ny = npc.y - Math.cos(npc.angle) * npc.speed;
-    if (isRoad(nx, ny)) {
-      npc.x = nx; npc.y = ny;
-    } else {
-      // Try turning
-      const angles = [Math.PI/2, -Math.PI/2, Math.PI];
-      let turned = false;
-      for (const da of angles) {
-        const a2 = npc.angle + da;
-        const tx2 = npc.x + Math.sin(a2) * npc.speed;
-        const ty2 = npc.y - Math.cos(a2) * npc.speed;
-        if (isRoad(tx2, ty2)) { npc.angle = a2; turned = true; break; }
+    // Score: passed a car closely (шашки)
+    if (!car.scored && !car.oncoming) {
+      const dx = Math.abs(car.x - player.x);
+      if (car.y < player.y - player.h/2 - 10) {
+        const pts = dx < LANE_W() * 0.5 ? 15 : 5;
+        score += pts;
+        car.scored = true;
+        spawnScore(car.x, player.y - 40, pts);
+        if (pts >= 15) showCombo('ШАШКИ! 🔥');
+        document.getElementById('scoreEl').textContent = score;
       }
-      if (!turned) npc.angle += Math.PI;
     }
-    npc.x = ((npc.x % (MAP_W*TILE)) + MAP_W*TILE) % (MAP_W*TILE);
-    npc.y = ((npc.y % (MAP_H*TILE)) + MAP_H*TILE) % (MAP_H*TILE);
+
+    // Collision with player
+    const dx = Math.abs(car.x - player.x);
+    const dy = Math.abs(car.y - player.y);
+    if (dx < (car.w + player.w)/2 - 6 && dy < (car.h + player.h)/2 - 8) {
+      player.speed = Math.max(0, player.speed - 2);
+      score = Math.max(0, score - 10);
+      document.getElementById('scoreEl').textContent = score;
+      showCombo('БАМ! 💥');
+    }
+
+    // Remove off-screen
+    return car.y > -200 && car.y < canvas.height + 200;
   });
 }
 
-// ─── Game loop ─────────────────────────────────────────
+let comboTimer = null;
+function showCombo(text) {
+  const el = document.getElementById('combo');
+  el.textContent = text;
+  el.style.display = 'block';
+  el.style.opacity = '1';
+  clearTimeout(comboTimer);
+  comboTimer = setTimeout(() => { el.style.opacity='0'; setTimeout(()=>el.style.display='none',300); }, 900);
+}
 
+// ── Loop ─────────────────────────────────────────────────
 function loop() {
   if (!gameRunning) return;
   ctx.clearRect(0, 0, canvas.width, canvas.height);
-  drawMap();
-  drawHearts();
-  npcs.forEach(npc => drawCar(npc.x, npc.y, npc.angle, npc.color, false));
-  drawCar(player.x, player.y, player.angle, '#c0392b', true);
-  updatePlayer();
-  updateNPCs();
+  drawRoad();
+  cars.forEach(car => drawCarShape(car.x, car.y, car.w, car.h, car.color, car.oncoming));
+  drawPlayerCar();
+  updateParticles();
+  update();
   animId = requestAnimationFrame(loop);
 }
 
+// ── Game lifecycle ────────────────────────────────────────
 function startGame() {
-  score = 0;
-  timeLeft = 60;
+  score = 0; timeLeft = 60;
+  document.getElementById('scoreEl').textContent = '0';
+  document.getElementById('timerEl').textContent = '60';
+  document.getElementById('menu').style.display = 'none';
+  document.getElementById('gameover').style.display = 'none';
+  document.getElementById('hud').style.display = 'flex';
+  document.getElementById('speedometer').style.display = 'block';
+  document.getElementById('controls').style.display = 'grid';
+
+  player.x = canvas.width / 2;
+  player.y = canvas.height * 0.72;
+  player.speed = 0; player.lateral = 0;
+  cars = []; particles = []; worldY = 0; spawnTimer = 0;
+
+  initBuildings();
+
   gameRunning = true;
-  document.getElementById('score').textContent = '0';
-  document.getElementById('timer').textContent = '60';
-  document.getElementById('overlay').classList.remove('show');
-
-  player.x = 2.5 * TILE;
-  player.y = 2.5 * TILE;
-  player.angle = 0;
-  player.speed = 0;
-
-  spawnHearts();
-  spawnNPCs();
-
   clearInterval(timerInterval);
   timerInterval = setInterval(() => {
     timeLeft--;
-    document.getElementById('timer').textContent = timeLeft;
-    if (timeLeft <= 0) {
-      gameRunning = false;
-      clearInterval(timerInterval);
-      cancelAnimationFrame(animId);
-      document.getElementById('finalScore').textContent = score;
-      document.getElementById('overlay').classList.add('show');
-    }
+    document.getElementById('timerEl').textContent = timeLeft;
+    if (timeLeft <= 0) endGame();
   }, 1000);
 
   cancelAnimationFrame(animId);
   loop();
 }
 
-// ─── Controls ──────────────────────────────────────────
+function endGame() {
+  gameRunning = false;
+  clearInterval(timerInterval);
+  cancelAnimationFrame(animId);
+  if (score > best) { best = score; localStorage.setItem('best', best); }
+  document.getElementById('hud').style.display = 'none';
+  document.getElementById('speedometer').style.display = 'none';
+  document.getElementById('controls').style.display = 'none';
+  document.getElementById('finalScore').textContent = score;
+  document.getElementById('finalBest').textContent = best === score ? '🏆 Новый рекорд!' : `Рекорд: ${best}`;
+  document.getElementById('gameover').style.display = 'flex';
+}
 
+function showMenu() {
+  gameRunning = false;
+  clearInterval(timerInterval);
+  cancelAnimationFrame(animId);
+  document.getElementById('gameover').style.display = 'none';
+  document.getElementById('hud').style.display = 'none';
+  document.getElementById('speedometer').style.display = 'none';
+  document.getElementById('controls').style.display = 'none';
+  document.getElementById('bestDisplay').textContent = `Рекорд: ${best} очков`;
+  document.getElementById('menu').style.display = 'flex';
+}
+
+// ── Controls ──────────────────────────────────────────────
 document.addEventListener('keydown', e => {
   keys[e.key] = true;
   if (['ArrowUp','ArrowDown','ArrowLeft','ArrowRight'].includes(e.key)) e.preventDefault();
 });
 document.addEventListener('keyup', e => { keys[e.key] = false; });
 
-['Up','Down','Left','Right'].forEach(dir => {
-  const btn = document.getElementById('btn' + dir);
-  const k   = dir.toLowerCase();
-  btn.addEventListener('touchstart', e => { e.preventDefault(); keys[k] = true; },  {passive:false});
-  btn.addEventListener('touchend',   e => { e.preventDefault(); keys[k] = false; }, {passive:false});
-  btn.addEventListener('mousedown',  () => keys[k] = true);
-  btn.addEventListener('mouseup',    () => keys[k] = false);
-  btn.addEventListener('mouseleave', () => keys[k] = false);
+['Left','Right'].forEach(dir => {
+  const btn = document.getElementById('btn'+dir);
+  const k = dir.toLowerCase();
+  btn.addEventListener('touchstart', e => { e.preventDefault(); keys[k]=true; }, {passive:false});
+  btn.addEventListener('touchend',   e => { e.preventDefault(); keys[k]=false; }, {passive:false});
+  btn.addEventListener('mousedown',  () => keys[k]=true);
+  btn.addEventListener('mouseup',    () => keys[k]=false);
+  btn.addEventListener('mouseleave', () => keys[k]=false);
 });
 
+document.getElementById('playBtn').addEventListener('click', startGame);
 document.getElementById('restartBtn').addEventListener('click', startGame);
+document.getElementById('menuBtn').addEventListener('click', showMenu);
 
-window.addEventListener('resize', () => { resize(); });
-
-resize();
-startGame();
+// Init
+document.getElementById('bestDisplay').textContent = `Рекорд: ${best} очков`;
 </script>
 </body>
 </html>
