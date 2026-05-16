@@ -173,7 +173,7 @@ def main():
     app.add_handler(CommandHandler("song", song))
     app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_message))
     app.add_handler(MessageHandler(filters.VOICE, handle_voice))
-    app.job_queue.run_repeating(send_compliments, interval=300, first=10)
+    app.job_queue.run_repeating(send_compliments, interval=3600, first=10)
     print("Бот запущен! Нажми Ctrl+C чтобы остановить.")
     app.run_polling()
 
