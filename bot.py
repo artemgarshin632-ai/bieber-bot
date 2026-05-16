@@ -2,7 +2,7 @@ import os
 import asyncio
 import random
 import tempfile
-from gtts import gTTS
+import edge_tts
 from dotenv import load_dotenv
 from groq import Groq
 from telegram import Update
@@ -81,11 +81,13 @@ def save_chat_id(chat_id: int):
 
 chat_ids = load_chat_ids()
 
-async def send_voice(update: Update, text: str, lang: str = "ru"):
+VOICE = "ru-RU-DmitryNeural"
+
+async def send_voice(update: Update, text: str):
     with tempfile.NamedTemporaryFile(suffix=".mp3", delete=False) as f:
         tmp_path = f.name
-    tts = gTTS(text=text, lang=lang)
-    tts.save(tmp_path)
+    communicate = edge_tts.Communicate(text, VOICE)
+    await communicate.save(tmp_path)
     with open(tmp_path, "rb") as audio:
         await update.message.reply_voice(voice=audio)
     os.remove(tmp_path)
@@ -93,8 +95,8 @@ async def send_voice(update: Update, text: str, lang: str = "ru"):
 async def send_voice_to_chat(context, chat_id: int, text: str):
     with tempfile.NamedTemporaryFile(suffix=".mp3", delete=False) as f:
         tmp_path = f.name
-    tts = gTTS(text=text, lang="ru")
-    tts.save(tmp_path)
+    communicate = edge_tts.Communicate(text, VOICE)
+    await communicate.save(tmp_path)
     with open(tmp_path, "rb") as audio:
         await context.bot.send_voice(chat_id=chat_id, voice=audio)
     os.remove(tmp_path)
