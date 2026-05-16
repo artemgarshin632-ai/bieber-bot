@@ -161,8 +161,8 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     name = random.choice(NAMES)
     text = (f"Привет, {name}! Я ваш личный ассистент 🤖\n\n"
             "💰 *Учёт трат:* просто напиши или скажи голосом что потратил, например: «кофе 300» или «такси 450»\n"
-            "/отчёт — график трат за месяц\n"
-            "/анализ — голосовой разбор расходов\n\n"
+            "/report — график трат за месяц\n"
+            "/analysis — голосовой разбор расходов\n\n"
             "Пиши или говори — я всегда тут!")
     await update.message.reply_text(text, parse_mode="Markdown")
 
@@ -270,8 +270,8 @@ def main():
     token = os.getenv("TELEGRAM_TOKEN")
     app = ApplicationBuilder().token(token).build()
     app.add_handler(CommandHandler("start", start))
-    app.add_handler(CommandHandler("отчёт", report))
-    app.add_handler(CommandHandler("анализ", analysis))
+    app.add_handler(CommandHandler("report", report))
+    app.add_handler(CommandHandler("analysis", analysis))
     app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_message))
     app.add_handler(MessageHandler(filters.VOICE, handle_voice))
     app.job_queue.run_repeating(send_compliments, interval=3600, first=10)
