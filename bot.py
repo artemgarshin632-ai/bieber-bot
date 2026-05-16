@@ -9,7 +9,6 @@ from datetime import datetime
 import matplotlib
 matplotlib.use("Agg")
 import matplotlib.pyplot as plt
-import edge_tts
 from dotenv import load_dotenv
 from groq import Groq
 from telegram import Update
@@ -39,7 +38,6 @@ COMPLIMENTS = [
 
 EXPENSES_FILE = "expenses.csv"
 CHAT_IDS_FILE = "chat_ids.txt"
-VOICE = "ru-RU-DmitryNeural"
 _executor = ThreadPoolExecutor(max_workers=4)
 
 # --- Chat IDs ---
@@ -134,30 +132,10 @@ def make_chart(expenses):
     plt.close()
     return tmp.name, total, by_category
 
-# --- Voice ---
-
-async def send_voice(update: Update, text: str):
-    with tempfile.NamedTemporaryFile(suffix=".mp3", delete=False) as f:
-        tmp_path = f.name
-    communicate = edge_tts.Communicate(text, VOICE)
-    await communicate.save(tmp_path)
-    with open(tmp_path, "rb") as audio:
-        await update.message.reply_voice(voice=audio)
-    os.remove(tmp_path)
-
-async def send_voice_to_chat(context, chat_id: int, text: str):
-    with tempfile.NamedTemporaryFile(suffix=".mp3", delete=False) as f:
-        tmp_path = f.name
-    communicate = edge_tts.Communicate(text, VOICE)
-    await communicate.save(tmp_path)
-    with open(tmp_path, "rb") as audio:
-        await context.bot.send_voice(chat_id=chat_id, voice=audio)
-    os.remove(tmp_path)
-
 async def send_compliments(context):
     for chat_id in list(chat_ids):
         text = random.choice(COMPLIMENTS)
-        await send_voice_to_chat(context, chat_id, text)
+        await context.bot.send_message(chat_id=chat_id, text=text)
 
 # --- Handlers ---
 
@@ -166,10 +144,10 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     save_chat_id(update.effective_chat.id)
     name = random.choice(NAMES)
     text = (f"Привет, {name}! Я ваш личный ассистент 🤖\n\n"
-            "💰 *Учёт трат:* просто напиши или скажи голосом что потратил, например: «кофе 300» или «такси 450»\n"
+            "💰 *Учёт трат:* напиши или скажи голосом что потратил, например: «кофе 300» или «такси 450»\n"
             "/report — график трат за месяц\n"
-            "/analysis — голосовой разбор расходов\n\n"
-            "Пиши или говори — я всегда тут!")
+            "/analysis — разбор расходов\n\n"
+            "Пиши — я всегда тут!")
     await update.message.reply_text(text, parse_mode="Markdown")
 
 async def report(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -188,7 +166,7 @@ async def analysis(update: Update, context: ContextTypes.DEFAULT_TYPE):
     month = datetime.now().strftime("%Y-%m")
     expenses = load_expenses(month)
     if not expenses:
-        await send_voice(update, "За этот месяц трат пока нет.")
+        await update.message.reply_text("За этот месяц трат пока нет.")
         return
     total = sum(float(e["amount"]) for e in expenses)
     by_cat = {}
@@ -197,7 +175,7 @@ async def analysis(update: Update, context: ContextTypes.DEFAULT_TYPE):
     summary = ", ".join([f"{c}: {a:.0f} рублей" for c, a in sorted(by_cat.items(), key=lambda x: -x[1])])
     prompt = f"Общие траты за месяц: {total:.0f} рублей. По категориям: {summary}. Дай краткий анализ (2-3 предложения) на что уходит больше всего и один совет как сэкономить."
     answer = await ask_ai(prompt)
-    await send_voice(update, answer)
+    await update.message.reply_text(answer)
 
 def _ask_ai_sync(user_text: str) -> str:
     response = groq_client.chat.completions.create(
@@ -232,14 +210,14 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
             f"👤 {user}"
         )
     else:
-        await update.message.chat.send_action("record_voice")
+        await update.message.chat.send_action("typing")
         answer = await ask_ai(text)
-        await send_voice(update, answer)
+        await update.message.reply_text(answer)
 
 async def handle_voice(update: Update, context: ContextTypes.DEFAULT_TYPE):
     chat_ids.add(update.effective_chat.id)
     save_chat_id(update.effective_chat.id)
-    await update.message.chat.send_action("record_voice")
+    await update.message.chat.send_action("typing")
     user = update.effective_user.first_name or "Неизвестно"
 
     voice_file = await update.message.voice.get_file()
@@ -273,7 +251,7 @@ async def handle_voice(update: Update, context: ContextTypes.DEFAULT_TYPE):
         )
     else:
         answer = await ask_ai(user_text)
-        await send_voice(update, answer)
+        await update.message.reply_text(answer)
 
 def main():
     loop = asyncio.new_event_loop()
@@ -285,7 +263,7 @@ def main():
     app.add_handler(CommandHandler("analysis", analysis))
     app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_message))
     app.add_handler(MessageHandler(filters.VOICE, handle_voice))
-    app.job_queue.run_repeating(send_compliments, interval=3600, first=3600)
+    app.job_queue.run_repeating(send_compliments, interval=86400, first=86400)
     print("Бот запущен!")
     app.run_polling()
 
