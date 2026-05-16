@@ -3,4 +3,4 @@ groq
 python-dotenv
 edge-tts
 matplotlib
-pandas
+requests
