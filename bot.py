@@ -11,7 +11,7 @@ matplotlib.use("Agg")
 import matplotlib.pyplot as plt
 from dotenv import load_dotenv
 from groq import Groq
-from telegram import Update
+from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup, WebAppInfo
 from telegram.ext import ApplicationBuilder, MessageHandler, CommandHandler, filters, ContextTypes
 
 load_dotenv()
@@ -146,7 +146,8 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     text = (f"Привет, {name}! Я ваш личный ассистент 🤖\n\n"
             "💰 *Учёт трат:* напиши или скажи голосом что потратил, например: «кофе 300» или «такси 450»\n"
             "/report — график трат за месяц\n"
-            "/analysis — разбор расходов\n\n"
+            "/analysis — разбор расходов\n"
+            "/game — игра «Даша на Tugella» 🚗\n\n"
             "Пиши — я всегда тут!")
     await update.message.reply_text(text, parse_mode="Markdown")
 
@@ -161,6 +162,20 @@ async def report(update: Update, context: ContextTypes.DEFAULT_TYPE):
     with open(chart_path, "rb") as img:
         await update.message.reply_photo(photo=img, caption=caption)
     os.remove(chart_path)
+
+async def game(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    game_url = os.getenv("GAME_URL", "")
+    if not game_url:
+        await update.message.reply_text("🎮 Игра ещё не настроена. Добавь GAME_URL в переменные окружения.")
+        return
+    keyboard = InlineKeyboardMarkup([[
+        InlineKeyboardButton("🚗 Играть!", web_app=WebAppInfo(url=game_url))
+    ]])
+    await update.message.reply_text(
+        "🚗 Даша на Geely Tugella!\n\n"
+        "Собирай ❤️ и уворачивайся от машин за 60 секунд!",
+        reply_markup=keyboard
+    )
 
 async def analysis(update: Update, context: ContextTypes.DEFAULT_TYPE):
     month = datetime.now().strftime("%Y-%m")
@@ -259,6 +274,7 @@ def main():
     token = os.getenv("TELEGRAM_TOKEN")
     app = ApplicationBuilder().token(token).build()
     app.add_handler(CommandHandler("start", start))
+    app.add_handler(CommandHandler("game", game))
     app.add_handler(CommandHandler("report", report))
     app.add_handler(CommandHandler("analysis", analysis))
     app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_message))

@@ -1,0 +1,492 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
+<title>Даша на Tugella</title>
+<script src="https://telegram.org/js/telegram-web-app.js"></script>
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; touch-action: none; }
+  body {
+    background: #1a1a2e;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    height: 100vh;
+    overflow: hidden;
+    font-family: 'Arial', sans-serif;
+  }
+  #wrapper { position: relative; }
+  canvas { display: block; }
+  #ui {
+    position: absolute;
+    top: 10px; left: 0; right: 0;
+    display: flex;
+    justify-content: space-between;
+    padding: 0 16px;
+    color: #fff;
+    font-size: 20px;
+    font-weight: bold;
+    text-shadow: 2px 2px 6px rgba(0,0,0,0.9);
+    pointer-events: none;
+  }
+  #controls {
+    position: absolute;
+    bottom: 16px;
+    left: 50%;
+    transform: translateX(-50%);
+    display: grid;
+    grid-template-columns: repeat(3, 58px);
+    grid-template-rows: repeat(2, 58px);
+    gap: 6px;
+  }
+  .btn {
+    background: rgba(255,255,255,0.18);
+    border: 2px solid rgba(255,255,255,0.4);
+    border-radius: 14px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 26px;
+    cursor: pointer;
+    user-select: none;
+    -webkit-user-select: none;
+    transition: background 0.1s;
+  }
+  .btn:active { background: rgba(255,255,255,0.4); }
+  #overlay {
+    display: none;
+    position: absolute;
+    inset: 0;
+    background: rgba(0,0,0,0.82);
+    align-items: center;
+    justify-content: center;
+    flex-direction: column;
+    color: #fff;
+    text-align: center;
+    padding: 30px;
+    border-radius: 0;
+  }
+  #overlay.show { display: flex; }
+  #overlay h1 { font-size: 28px; margin-bottom: 10px; }
+  #overlay p { font-size: 17px; margin: 6px 0; color: #ddd; }
+  #overlay .big { font-size: 48px; margin: 10px 0; }
+  #restartBtn {
+    margin-top: 20px;
+    padding: 14px 36px;
+    border: none;
+    border-radius: 14px;
+    background: linear-gradient(135deg, #e74c3c, #c0392b);
+    color: #fff;
+    font-size: 18px;
+    font-weight: bold;
+    cursor: pointer;
+    box-shadow: 0 4px 15px rgba(231,76,60,0.5);
+  }
+</style>
+</head>
+<body>
+<div id="wrapper">
+  <canvas id="game"></canvas>
+  <div id="ui">
+    <span>❤️ <span id="score">0</span></span>
+    <span>⏱️ <span id="timer">60</span>с</span>
+  </div>
+  <div id="controls">
+    <div></div>
+    <div class="btn" id="btnUp">⬆️</div>
+    <div></div>
+    <div class="btn" id="btnLeft">⬅️</div>
+    <div class="btn" id="btnDown">⬇️</div>
+    <div class="btn" id="btnRight">➡️</div>
+  </div>
+  <div id="overlay">
+    <div class="big">🏁</div>
+    <h1>Время вышло!</h1>
+    <p>Даша собрала сердечек:</p>
+    <div class="big" id="finalScore">0</div>
+    <button id="restartBtn">Играть снова</button>
+  </div>
+</div>
+
+<script>
+const canvas = document.getElementById('game');
+const ctx = canvas.getContext('2d');
+
+const TILE = 72;
+const MAP_W = 11;
+const MAP_H = 15;
+
+// 0=grass/building, 1=road
+const MAP = [
+  [0,0,1,1,0,0,0,1,1,0,0],
+  [0,0,1,1,0,0,0,1,1,0,0],
+  [1,1,1,1,1,1,1,1,1,1,1],
+  [1,1,1,1,1,1,1,1,1,1,1],
+  [0,0,1,1,0,0,0,1,1,0,0],
+  [0,0,1,1,0,0,0,1,1,0,0],
+  [0,0,1,1,0,0,0,1,1,0,0],
+  [1,1,1,1,1,1,1,1,1,1,1],
+  [1,1,1,1,1,1,1,1,1,1,1],
+  [0,0,1,1,0,0,0,1,1,0,0],
+  [0,0,1,1,0,0,0,1,1,0,0],
+  [0,0,1,1,0,0,0,1,1,0,0],
+  [1,1,1,1,1,1,1,1,1,1,1],
+  [1,1,1,1,1,1,1,1,1,1,1],
+  [0,0,1,1,0,0,0,1,1,0,0],
+];
+
+const BLDG_COLORS = ['#d4a574','#c9b8a8','#b8c4bb','#e8d5c4','#c4b5a0'];
+const NPC_COLORS  = ['#3498db','#2ecc71','#f39c12','#9b59b6','#1abc9c','#e67e22'];
+
+let cam = {x:0, y:0};
+let keys = {};
+let hearts = [];
+let npcs = [];
+let score = 0;
+let timeLeft = 60;
+let gameRunning = false;
+let animId = null;
+let timerInterval = null;
+
+const player = { x:0, y:0, angle:0, speed:0 };
+const PMAX = 3.8;
+
+function resize() {
+  const W = Math.min(window.innerWidth, 480);
+  const H = window.innerHeight;
+  canvas.width  = W;
+  canvas.height = H;
+}
+
+function isRoad(x, y) {
+  const tx = Math.floor(x / TILE);
+  const ty = Math.floor(y / TILE);
+  if (tx < 0 || ty < 0 || tx >= MAP_W || ty >= MAP_H) return false;
+  return MAP[ty][tx] === 1;
+}
+
+// ─── Draw ──────────────────────────────────────────────
+
+function drawMap() {
+  for (let r = 0; r < MAP_H; r++) {
+    for (let c = 0; c < MAP_W; c++) {
+      const wx = c * TILE - cam.x;
+      const wy = r * TILE - cam.y;
+      if (wx + TILE < 0 || wx > canvas.width || wy + TILE < 0 || wy > canvas.height) continue;
+
+      if (MAP[r][c] === 1) {
+        // Road
+        ctx.fillStyle = '#4a4a4a';
+        ctx.fillRect(wx, wy, TILE, TILE);
+
+        // Center line (dashed)
+        const isVert = r > 0 && r < MAP_H-1 && MAP[r-1][c] === 1 && MAP[r+1][c] === 1 &&
+                       (c === 0 || MAP[r][c-1] !== 1) && (c === MAP_W-1 || MAP[r][c+1] !== 1);
+        const isHorz = c > 0 && c < MAP_W-1 && MAP[r][c-1] === 1 && MAP[r][c+1] === 1 &&
+                       (r === 0 || MAP[r-1][c] !== 1) && (r === MAP_H-1 || MAP[r+1][c] !== 1);
+
+        ctx.strokeStyle = 'rgba(255,255,255,0.35)';
+        ctx.lineWidth = 2;
+        ctx.setLineDash([12, 14]);
+        if (isVert) {
+          ctx.beginPath(); ctx.moveTo(wx+TILE/2, wy); ctx.lineTo(wx+TILE/2, wy+TILE); ctx.stroke();
+        }
+        if (isHorz) {
+          ctx.beginPath(); ctx.moveTo(wx, wy+TILE/2); ctx.lineTo(wx+TILE, wy+TILE/2); ctx.stroke();
+        }
+        ctx.setLineDash([]);
+      } else {
+        // Grass
+        ctx.fillStyle = '#3d6b4f';
+        ctx.fillRect(wx, wy, TILE, TILE);
+        // Building
+        const pad = 7;
+        const bColor = BLDG_COLORS[(r * MAP_W + c) % BLDG_COLORS.length];
+        ctx.fillStyle = bColor;
+        ctx.beginPath();
+        ctx.roundRect(wx+pad, wy+pad, TILE-pad*2, TILE-pad*2, 4);
+        ctx.fill();
+        ctx.strokeStyle = 'rgba(0,0,0,0.2)';
+        ctx.lineWidth = 1;
+        ctx.stroke();
+        // Windows
+        ctx.fillStyle = 'rgba(120,180,230,0.75)';
+        for (let wi = 0; wi < 2; wi++)
+          for (let wj = 0; wj < 2; wj++)
+            ctx.fillRect(wx+pad+5+wi*20, wy+pad+5+wj*20, 13, 11);
+      }
+    }
+  }
+}
+
+function drawCar(x, y, angle, color, isDasha) {
+  const sx = x - cam.x;
+  const sy = y - cam.y;
+  if (sx < -60 || sx > canvas.width+60 || sy < -80 || sy > canvas.height+80) return;
+
+  const W = isDasha ? 32 : 28;
+  const H = isDasha ? 52 : 46;
+
+  ctx.save();
+  ctx.translate(sx, sy);
+  ctx.rotate(angle);
+
+  // Shadow
+  ctx.fillStyle = 'rgba(0,0,0,0.25)';
+  ctx.beginPath();
+  ctx.ellipse(3, 4, W/2+2, H/2+2, 0, 0, Math.PI*2);
+  ctx.fill();
+
+  // Body
+  ctx.fillStyle = color;
+  ctx.beginPath();
+  ctx.roundRect(-W/2, -H/2, W, H, 7);
+  ctx.fill();
+
+  // Roof highlight
+  ctx.fillStyle = 'rgba(255,255,255,0.12)';
+  ctx.beginPath();
+  ctx.roundRect(-W/2+4, -H/2+4, W-8, H/2-4, 5);
+  ctx.fill();
+
+  // Windshield front
+  ctx.fillStyle = 'rgba(160,220,255,0.85)';
+  ctx.beginPath();
+  ctx.roundRect(-W/2+4, -H/2+7, W-8, H*0.28, 3);
+  ctx.fill();
+
+  // Windshield rear
+  ctx.fillStyle = 'rgba(160,220,255,0.6)';
+  ctx.beginPath();
+  ctx.roundRect(-W/2+4, H/2-H*0.28-5, W-8, H*0.24, 3);
+  ctx.fill();
+
+  // Wheels
+  ctx.fillStyle = '#1a1a1a';
+  const wy2 = [[-W/2-5, -H/2+7], [W/2-1, -H/2+7], [-W/2-5, H/2-17], [W/2-1, H/2-17]];
+  wy2.forEach(([wx2, wy3]) => {
+    ctx.fillRect(wx2, wy3, 7, 12);
+    ctx.fillStyle = '#444';
+    ctx.fillRect(wx2+1, wy3+1, 5, 10);
+    ctx.fillStyle = '#1a1a1a';
+  });
+
+  // Headlights
+  ctx.fillStyle = '#fffde7';
+  ctx.beginPath(); ctx.ellipse(-W/2+7, -H/2+3, 4, 3, 0, 0, Math.PI*2); ctx.fill();
+  ctx.beginPath(); ctx.ellipse( W/2-7, -H/2+3, 4, 3, 0, 0, Math.PI*2); ctx.fill();
+
+  // Taillights
+  ctx.fillStyle = '#e74c3c';
+  ctx.beginPath(); ctx.ellipse(-W/2+7, H/2-3, 4, 3, 0, 0, Math.PI*2); ctx.fill();
+  ctx.beginPath(); ctx.ellipse( W/2-7, H/2-3, 4, 3, 0, 0, Math.PI*2); ctx.fill();
+
+  if (isDasha) {
+    // Дашa inside
+    ctx.fillStyle = '#ffd6a0';
+    ctx.beginPath(); ctx.arc(0, -6, 9, 0, Math.PI*2); ctx.fill();
+    // Hair
+    ctx.fillStyle = '#7B3F00';
+    ctx.beginPath(); ctx.arc(0, -12, 9, Math.PI, 0); ctx.fill();
+    ctx.fillRect(-9, -14, 5, 8);
+    ctx.fillRect(4,  -14, 5, 8);
+    // Eyes
+    ctx.fillStyle = '#2c2c2c';
+    ctx.beginPath(); ctx.arc(-3.5, -7, 1.8, 0, Math.PI*2); ctx.fill();
+    ctx.beginPath(); ctx.arc( 3.5, -7, 1.8, 0, Math.PI*2); ctx.fill();
+    // Smile
+    ctx.strokeStyle = '#c0392b';
+    ctx.lineWidth = 1.5;
+    ctx.beginPath(); ctx.arc(0, -4, 3.5, 0.1, Math.PI-0.1); ctx.stroke();
+  }
+
+  ctx.restore();
+}
+
+function drawHearts() {
+  hearts.forEach(h => {
+    if (h.collected) return;
+    const sx = h.x - cam.x;
+    const sy = h.y - cam.y;
+    if (sx < -30 || sx > canvas.width+30 || sy < -30 || sy > canvas.height+30) return;
+    ctx.save();
+    ctx.translate(sx, sy);
+    const t = Date.now() / 600;
+    ctx.scale(1 + 0.12*Math.sin(t + h.phase), 1 + 0.12*Math.sin(t + h.phase));
+    ctx.font = '26px Arial';
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'middle';
+    ctx.fillText('❤️', 0, 0);
+    ctx.restore();
+  });
+}
+
+// ─── Update ────────────────────────────────────────────
+
+function spawnHearts() {
+  hearts = [];
+  let attempts = 0;
+  while (hearts.length < 18 && attempts < 500) {
+    attempts++;
+    const x = (0.5 + Math.random() * (MAP_W - 1)) * TILE;
+    const y = (0.5 + Math.random() * (MAP_H - 1)) * TILE;
+    if (isRoad(x, y)) hearts.push({ x, y, collected: false, phase: Math.random()*Math.PI*2 });
+  }
+}
+
+function spawnNPCs() {
+  npcs = [];
+  const starts = [
+    { x: 2.5*TILE, y: 2*TILE,  angle: Math.PI/2  },
+    { x: 3.5*TILE, y: 5*TILE,  angle: -Math.PI/2 },
+    { x: 7.5*TILE, y: 3*TILE,  angle: Math.PI/2  },
+    { x: 8.5*TILE, y: 8*TILE,  angle: -Math.PI/2 },
+    { x: 5*TILE,   y: 2.5*TILE,angle: 0          },
+    { x: 4*TILE,   y: 7.5*TILE,angle: Math.PI    },
+    { x: 8*TILE,   y: 12.5*TILE,angle: Math.PI   },
+  ];
+  starts.forEach((s, i) => {
+    npcs.push({ ...s, speed: 1.2 + Math.random()*0.8, color: NPC_COLORS[i % NPC_COLORS.length] });
+  });
+}
+
+function updatePlayer() {
+  const turn  = 0.055;
+  const accel = 0.14;
+  const fric  = 0.91;
+
+  if (keys['left']  || keys['ArrowLeft'])  player.angle -= turn * (Math.abs(player.speed)/PMAX * 0.7 + 0.3);
+  if (keys['right'] || keys['ArrowRight']) player.angle += turn * (Math.abs(player.speed)/PMAX * 0.7 + 0.3);
+  if (keys['up']    || keys['ArrowUp'])    player.speed  = Math.min(player.speed + accel, PMAX);
+  else if (keys['down'] || keys['ArrowDown']) player.speed = Math.max(player.speed - accel, -PMAX/2);
+  else player.speed *= fric;
+
+  const nx = player.x + Math.sin(player.angle) * player.speed;
+  const ny = player.y - Math.cos(player.angle) * player.speed;
+
+  if (isRoad(nx, player.y)) player.x = nx; else player.speed *= -0.4;
+  if (isRoad(player.x, ny)) player.y = ny; else player.speed *= -0.4;
+
+  player.x = Math.max(TILE*0.3, Math.min(player.x, (MAP_W-0.3)*TILE));
+  player.y = Math.max(TILE*0.3, Math.min(player.y, (MAP_H-0.3)*TILE));
+
+  cam.x = Math.max(0, Math.min(player.x - canvas.width/2,  MAP_W*TILE - canvas.width));
+  cam.y = Math.max(0, Math.min(player.y - canvas.height/2, MAP_H*TILE - canvas.height));
+
+  // Collect hearts
+  hearts.forEach(h => {
+    if (!h.collected && Math.hypot(h.x - player.x, h.y - player.y) < 28) {
+      h.collected = true;
+      score++;
+      document.getElementById('score').textContent = score;
+      if (hearts.every(h2 => h2.collected)) spawnHearts();
+    }
+  });
+
+  // NPC collision
+  npcs.forEach(npc => {
+    if (Math.hypot(npc.x - player.x, npc.y - player.y) < 36) {
+      player.speed = -1.5;
+    }
+  });
+}
+
+function updateNPCs() {
+  npcs.forEach(npc => {
+    const nx = npc.x + Math.sin(npc.angle) * npc.speed;
+    const ny = npc.y - Math.cos(npc.angle) * npc.speed;
+    if (isRoad(nx, ny)) {
+      npc.x = nx; npc.y = ny;
+    } else {
+      // Try turning
+      const angles = [Math.PI/2, -Math.PI/2, Math.PI];
+      let turned = false;
+      for (const da of angles) {
+        const a2 = npc.angle + da;
+        const tx2 = npc.x + Math.sin(a2) * npc.speed;
+        const ty2 = npc.y - Math.cos(a2) * npc.speed;
+        if (isRoad(tx2, ty2)) { npc.angle = a2; turned = true; break; }
+      }
+      if (!turned) npc.angle += Math.PI;
+    }
+    npc.x = ((npc.x % (MAP_W*TILE)) + MAP_W*TILE) % (MAP_W*TILE);
+    npc.y = ((npc.y % (MAP_H*TILE)) + MAP_H*TILE) % (MAP_H*TILE);
+  });
+}
+
+// ─── Game loop ─────────────────────────────────────────
+
+function loop() {
+  if (!gameRunning) return;
+  ctx.clearRect(0, 0, canvas.width, canvas.height);
+  drawMap();
+  drawHearts();
+  npcs.forEach(npc => drawCar(npc.x, npc.y, npc.angle, npc.color, false));
+  drawCar(player.x, player.y, player.angle, '#c0392b', true);
+  updatePlayer();
+  updateNPCs();
+  animId = requestAnimationFrame(loop);
+}
+
+function startGame() {
+  score = 0;
+  timeLeft = 60;
+  gameRunning = true;
+  document.getElementById('score').textContent = '0';
+  document.getElementById('timer').textContent = '60';
+  document.getElementById('overlay').classList.remove('show');
+
+  player.x = 2.5 * TILE;
+  player.y = 2.5 * TILE;
+  player.angle = 0;
+  player.speed = 0;
+
+  spawnHearts();
+  spawnNPCs();
+
+  clearInterval(timerInterval);
+  timerInterval = setInterval(() => {
+    timeLeft--;
+    document.getElementById('timer').textContent = timeLeft;
+    if (timeLeft <= 0) {
+      gameRunning = false;
+      clearInterval(timerInterval);
+      cancelAnimationFrame(animId);
+      document.getElementById('finalScore').textContent = score;
+      document.getElementById('overlay').classList.add('show');
+    }
+  }, 1000);
+
+  cancelAnimationFrame(animId);
+  loop();
+}
+
+// ─── Controls ──────────────────────────────────────────
+
+document.addEventListener('keydown', e => {
+  keys[e.key] = true;
+  if (['ArrowUp','ArrowDown','ArrowLeft','ArrowRight'].includes(e.key)) e.preventDefault();
+});
+document.addEventListener('keyup', e => { keys[e.key] = false; });
+
+['Up','Down','Left','Right'].forEach(dir => {
+  const btn = document.getElementById('btn' + dir);
+  const k   = dir.toLowerCase();
+  btn.addEventListener('touchstart', e => { e.preventDefault(); keys[k] = true; },  {passive:false});
+  btn.addEventListener('touchend',   e => { e.preventDefault(); keys[k] = false; }, {passive:false});
+  btn.addEventListener('mousedown',  () => keys[k] = true);
+  btn.addEventListener('mouseup',    () => keys[k] = false);
+  btn.addEventListener('mouseleave', () => keys[k] = false);
+});
+
+document.getElementById('restartBtn').addEventListener('click', startGame);
+
+window.addEventListener('resize', () => { resize(); });
+
+resize();
+startGame();
+</script>
+</body>
+</html>
