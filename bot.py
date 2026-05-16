@@ -2,6 +2,12 @@ import os
 import asyncio
 import random
 import tempfile
+import csv
+import json
+from datetime import datetime
+import matplotlib
+matplotlib.use("Agg")
+import matplotlib.pyplot as plt
 import edge_tts
 from dotenv import load_dotenv
 from groq import Groq
@@ -12,9 +18,7 @@ load_dotenv()
 
 groq_client = Groq(api_key=os.getenv("GROQ_API_KEY"))
 
-SYSTEM_PROMPT = """Ты — суперфанат Джастина Бибера! Ты обожаешь его всем сердцем.
-Ты знаешь все его песни, альбомы, факты из его жизни.
-Отвечай с энтузиазмом, коротко (1-3 предложения).
+SYSTEM_PROMPT = """Ты — дружелюбный личный ассистент пары. Отвечай коротко (1-3 предложения).
 Всегда отвечай на том языке, на котором пишет пользователь."""
 
 NAMES = ["Даша", "Дашечка", "Дашуля"]
@@ -32,40 +36,20 @@ COMPLIMENTS = [
     "Дашуля, ты моя любимая девочка. Помни что я всегда думаю о тебе ❤️",
 ]
 
-FACTS = [
-    "Джастин Бибер родился 1 марта 1994 года в Канаде!",
-    "Его первый альбом My World вышел в 2009 году, когда ему было всего 15 лет!",
-    "Его менеджер Скутер Браун нашёл его через YouTube в 2008 году.",
-    "Песня Baby стала одним из самых просматриваемых видео на YouTube.",
-    "Джастин женился на Хейли Болдуин в 2018 году.",
-    "Он умеет играть на барабанах, гитаре, фортепиано и трубе.",
-    "Альбом Justice вышел в 2021 году и посвящён социальной справедливости.",
-    "Джастин дружит с Эдом Шираном, вместе записали Love Yourself и I Don't Care.",
-]
-
-SONGS = [
-    "Baby — классика, с которой всё началось!",
-    "Love Yourself — красивая и честная песня.",
-    "Sorry — невозможно не танцевать!",
-    "Peaches — летний хит из альбома Justice.",
-    "Stay совместно с The Kid LAROI — абсолютный хит!",
-    "Ghost — очень душевная баллада.",
-    "Yummy — залипательный трек.",
-    "What Do You Mean — настоящий шедевр!",
-]
-
+EXPENSES_FILE = "expenses.csv"
 CHAT_IDS_FILE = "chat_ids.txt"
+VOICE = "ru-RU-DmitryNeural"
+
+# --- Chat IDs ---
 
 def load_chat_ids():
     ids = set()
-    # из файла
     if os.path.exists(CHAT_IDS_FILE):
         with open(CHAT_IDS_FILE) as f:
             for line in f:
                 line = line.strip()
                 if line:
                     ids.add(int(line))
-    # из переменной окружения (для Railway)
     env_ids = os.getenv("CHAT_IDS", "")
     for cid in env_ids.split(","):
         cid = cid.strip()
@@ -81,7 +65,70 @@ def save_chat_id(chat_id: int):
 
 chat_ids = load_chat_ids()
 
-VOICE = "ru-RU-DmitryNeural"
+# --- Expenses ---
+
+def save_expense(user: str, amount: float, category: str, description: str):
+    file_exists = os.path.exists(EXPENSES_FILE)
+    with open(EXPENSES_FILE, "a", newline="", encoding="utf-8") as f:
+        writer = csv.writer(f)
+        if not file_exists:
+            writer.writerow(["date", "user", "amount", "category", "description"])
+        writer.writerow([datetime.now().strftime("%Y-%m-%d"), user, amount, category, description])
+
+def load_expenses(month: str = None):
+    if not os.path.exists(EXPENSES_FILE):
+        return []
+    with open(EXPENSES_FILE, encoding="utf-8") as f:
+        reader = csv.DictReader(f)
+        rows = list(reader)
+    if month:
+        rows = [r for r in rows if r["date"].startswith(month)]
+    return rows
+
+def detect_expense(text: str):
+    response = groq_client.chat.completions.create(
+        model="llama-3.3-70b-versatile",
+        messages=[
+            {"role": "system", "content": """Определи является ли сообщение записью о трате денег.
+Если да — верни JSON: {"is_expense": true, "amount": число, "category": "категория", "description": "описание"}
+Категории: Еда, Транспорт, Развлечения, Здоровье, Одежда, Дом, Другое
+Если нет — верни: {"is_expense": false}
+Отвечай ТОЛЬКО JSON без лишнего текста."""},
+            {"role": "user", "content": text}
+        ]
+    )
+    try:
+        return json.loads(response.choices[0].message.content.strip())
+    except:
+        return {"is_expense": False}
+
+def make_chart(expenses):
+    by_category = {}
+    for e in expenses:
+        cat = e["category"]
+        by_category[cat] = by_category.get(cat, 0) + float(e["amount"])
+
+    fig, ax = plt.subplots(figsize=(8, 6))
+    categories = list(by_category.keys())
+    amounts = list(by_category.values())
+    colors = ["#FF6B6B", "#4ECDC4", "#45B7D1", "#96CEB4", "#FFEAA7", "#DDA0DD", "#98D8C8"]
+    wedges, texts, autotexts = ax.pie(amounts, labels=categories, autopct="%1.0f%%",
+                                       colors=colors[:len(categories)], startangle=90)
+    ax.set_title(f"Траты за {datetime.now().strftime('%B %Y')}", fontsize=14, fontweight="bold")
+
+    total = sum(amounts)
+    legend_labels = [f"{c}: {a:.0f}₽" for c, a in zip(categories, amounts)]
+    ax.legend(legend_labels, loc="lower center", bbox_to_anchor=(0.5, -0.15), ncol=2)
+
+    plt.figtext(0.5, 0.02, f"Итого: {total:.0f}₽", ha="center", fontsize=12, fontweight="bold")
+    plt.tight_layout()
+
+    tmp = tempfile.NamedTemporaryFile(suffix=".png", delete=False)
+    plt.savefig(tmp.name, dpi=150, bbox_inches="tight")
+    plt.close()
+    return tmp.name, total, by_category
+
+# --- Voice ---
 
 async def send_voice(update: Update, text: str):
     with tempfile.NamedTemporaryFile(suffix=".mp3", delete=False) as f:
@@ -106,24 +153,48 @@ async def send_compliments(context):
         text = random.choice(COMPLIMENTS)
         await send_voice_to_chat(context, chat_id, text)
 
+# --- Handlers ---
+
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     chat_ids.add(update.effective_chat.id)
     save_chat_id(update.effective_chat.id)
     name = random.choice(NAMES)
-    text = f"Привет, {name}! Я твой личный фанат-бот Джастина Бибера! Пиши мне что угодно, или используй команды: /fact — узнать факт о Бибере, /song — что послушать прямо сейчас!"
-    await send_voice(update, text)
+    text = (f"Привет, {name}! Я ваш личный ассистент 🤖\n\n"
+            "💰 *Учёт трат:* просто напиши или скажи голосом что потратил, например: «кофе 300» или «такси 450»\n"
+            "/отчёт — график трат за месяц\n"
+            "/анализ — голосовой разбор расходов\n\n"
+            "Пиши или говори — я всегда тут!")
+    await update.message.reply_text(text, parse_mode="Markdown")
 
-async def fact(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    chat_ids.add(update.effective_chat.id)
-    save_chat_id(update.effective_chat.id)
-    text = "Знаешь ли ты, что... " + random.choice(FACTS)
-    await send_voice(update, text)
+async def report(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    month = datetime.now().strftime("%Y-%m")
+    expenses = load_expenses(month)
+    if not expenses:
+        await update.message.reply_text("За этот месяц трат пока нет.")
+        return
+    chart_path, total, by_cat = make_chart(expenses)
+    caption = f"📊 Траты за {datetime.now().strftime('%B %Y')}\nИтого: {total:.0f}₽"
+    with open(chart_path, "rb") as img:
+        await update.message.reply_photo(photo=img, caption=caption)
+    os.remove(chart_path)
 
-async def song(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    chat_ids.add(update.effective_chat.id)
-    save_chat_id(update.effective_chat.id)
-    text = "Сейчас советую послушать: " + random.choice(SONGS)
-    await send_voice(update, text)
+async def analysis(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    month = datetime.now().strftime("%Y-%m")
+    expenses = load_expenses(month)
+    if not expenses:
+        await send_voice(update, "За этот месяц трат пока нет.")
+        return
+    total = sum(float(e["amount"]) for e in expenses)
+    by_cat = {}
+    for e in expenses:
+        by_cat[e["category"]] = by_cat.get(e["category"], 0) + float(e["amount"])
+    summary = ", ".join([f"{c}: {a:.0f} рублей" for c, a in sorted(by_cat.items(), key=lambda x: -x[1])])
+    prompt = f"Общие траты за месяц: {total:.0f} рублей. По категориям: {summary}. Дай краткий анализ (2-3 предложения) на что уходит больше всего и один совет как сэкономить."
+    response = groq_client.chat.completions.create(
+        model="llama-3.3-70b-versatile",
+        messages=[{"role": "user", "content": prompt}]
+    )
+    await send_voice(update, response.choices[0].message.content)
 
 async def ask_ai(user_text: str) -> str:
     response = groq_client.chat.completions.create(
@@ -138,14 +209,31 @@ async def ask_ai(user_text: str) -> str:
 async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
     chat_ids.add(update.effective_chat.id)
     save_chat_id(update.effective_chat.id)
-    await update.message.chat.send_action("record_voice")
-    answer = await ask_ai(update.message.text)
-    await send_voice(update, answer)
+    text = update.message.text
+    user = update.effective_user.first_name or "Неизвестно"
+
+    result = detect_expense(text)
+    if result.get("is_expense"):
+        amount = result["amount"]
+        category = result["category"]
+        description = result["description"]
+        save_expense(user, amount, category, description)
+        await update.message.reply_text(
+            f"✅ Записал!\n"
+            f"💸 {description} — {amount:.0f}₽\n"
+            f"📂 Категория: {category}\n"
+            f"👤 {user}"
+        )
+    else:
+        await update.message.chat.send_action("record_voice")
+        answer = await ask_ai(text)
+        await send_voice(update, answer)
 
 async def handle_voice(update: Update, context: ContextTypes.DEFAULT_TYPE):
     chat_ids.add(update.effective_chat.id)
     save_chat_id(update.effective_chat.id)
     await update.message.chat.send_action("record_voice")
+    user = update.effective_user.first_name or "Неизвестно"
 
     voice_file = await update.message.voice.get_file()
     with tempfile.NamedTemporaryFile(suffix=".ogg", delete=False) as f:
@@ -160,8 +248,21 @@ async def handle_voice(update: Update, context: ContextTypes.DEFAULT_TYPE):
     os.remove(tmp_path)
 
     user_text = transcription.text
-    answer = await ask_ai(user_text)
-    await send_voice(update, answer)
+    result = detect_expense(user_text)
+    if result.get("is_expense"):
+        amount = result["amount"]
+        category = result["category"]
+        description = result["description"]
+        save_expense(user, amount, category, description)
+        await update.message.reply_text(
+            f"✅ Записал!\n"
+            f"💸 {description} — {amount:.0f}₽\n"
+            f"📂 Категория: {category}\n"
+            f"👤 {user}"
+        )
+    else:
+        answer = await ask_ai(user_text)
+        await send_voice(update, answer)
 
 def main():
     loop = asyncio.new_event_loop()
@@ -169,12 +270,12 @@ def main():
     token = os.getenv("TELEGRAM_TOKEN")
     app = ApplicationBuilder().token(token).build()
     app.add_handler(CommandHandler("start", start))
-    app.add_handler(CommandHandler("fact", fact))
-    app.add_handler(CommandHandler("song", song))
+    app.add_handler(CommandHandler("отчёт", report))
+    app.add_handler(CommandHandler("анализ", analysis))
     app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_message))
     app.add_handler(MessageHandler(filters.VOICE, handle_voice))
     app.job_queue.run_repeating(send_compliments, interval=3600, first=10)
-    print("Бот запущен! Нажми Ctrl+C чтобы остановить.")
+    print("Бот запущен!")
     app.run_polling()
 
 if __name__ == "__main__":
