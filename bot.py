@@ -164,7 +164,7 @@ async def report(update: Update, context: ContextTypes.DEFAULT_TYPE):
     os.remove(chart_path)
 
 async def game(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    game_url = os.getenv("GAME_URL", "https://artemgarshin632-ai.github.io/bieber-bot/game.html")
+    game_url = os.getenv("GAME_URL", "https://artemgarshin632-ai.github.io/bieber-bot/game.html?v=3")
     keyboard = InlineKeyboardMarkup([[
         InlineKeyboardButton("🚗 Играть!", web_app=WebAppInfo(url=game_url))
     ]])
