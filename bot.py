@@ -4,6 +4,7 @@ import random
 import tempfile
 import csv
 import json
+from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime
 import matplotlib
 matplotlib.use("Agg")
@@ -39,6 +40,7 @@ COMPLIMENTS = [
 EXPENSES_FILE = "expenses.csv"
 CHAT_IDS_FILE = "chat_ids.txt"
 VOICE = "ru-RU-DmitryNeural"
+_executor = ThreadPoolExecutor(max_workers=4)
 
 # --- Chat IDs ---
 
@@ -85,7 +87,7 @@ def load_expenses(month: str = None):
         rows = [r for r in rows if r["date"].startswith(month)]
     return rows
 
-def detect_expense(text: str):
+def _detect_expense_sync(text: str):
     response = groq_client.chat.completions.create(
         model="llama-3.3-70b-versatile",
         messages=[
@@ -101,6 +103,10 @@ def detect_expense(text: str):
         return json.loads(response.choices[0].message.content.strip())
     except:
         return {"is_expense": False}
+
+async def detect_expense(text: str):
+    loop = asyncio.get_event_loop()
+    return await loop.run_in_executor(_executor, _detect_expense_sync, text)
 
 def make_chart(expenses):
     by_category = {}
@@ -190,13 +196,10 @@ async def analysis(update: Update, context: ContextTypes.DEFAULT_TYPE):
         by_cat[e["category"]] = by_cat.get(e["category"], 0) + float(e["amount"])
     summary = ", ".join([f"{c}: {a:.0f} рублей" for c, a in sorted(by_cat.items(), key=lambda x: -x[1])])
     prompt = f"Общие траты за месяц: {total:.0f} рублей. По категориям: {summary}. Дай краткий анализ (2-3 предложения) на что уходит больше всего и один совет как сэкономить."
-    response = groq_client.chat.completions.create(
-        model="llama-3.3-70b-versatile",
-        messages=[{"role": "user", "content": prompt}]
-    )
-    await send_voice(update, response.choices[0].message.content)
+    answer = await ask_ai(prompt)
+    await send_voice(update, answer)
 
-async def ask_ai(user_text: str) -> str:
+def _ask_ai_sync(user_text: str) -> str:
     response = groq_client.chat.completions.create(
         model="llama-3.3-70b-versatile",
         messages=[
@@ -206,13 +209,17 @@ async def ask_ai(user_text: str) -> str:
     )
     return response.choices[0].message.content
 
+async def ask_ai(user_text: str) -> str:
+    loop = asyncio.get_event_loop()
+    return await loop.run_in_executor(_executor, _ask_ai_sync, user_text)
+
 async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
     chat_ids.add(update.effective_chat.id)
     save_chat_id(update.effective_chat.id)
     text = update.message.text
     user = update.effective_user.first_name or "Неизвестно"
 
-    result = detect_expense(text)
+    result = await detect_expense(text)
     if result.get("is_expense"):
         amount = result["amount"]
         category = result["category"]
@@ -240,15 +247,19 @@ async def handle_voice(update: Update, context: ContextTypes.DEFAULT_TYPE):
         tmp_path = f.name
     await voice_file.download_to_drive(tmp_path)
 
-    with open(tmp_path, "rb") as audio:
-        transcription = groq_client.audio.transcriptions.create(
-            file=("voice.ogg", audio),
-            model="whisper-large-v3",
-        )
+    def _transcribe():
+        with open(tmp_path, "rb") as audio:
+            return groq_client.audio.transcriptions.create(
+                file=("voice.ogg", audio),
+                model="whisper-large-v3",
+            )
+
+    loop = asyncio.get_event_loop()
+    transcription = await loop.run_in_executor(_executor, _transcribe)
     os.remove(tmp_path)
 
     user_text = transcription.text
-    result = detect_expense(user_text)
+    result = await detect_expense(user_text)
     if result.get("is_expense"):
         amount = result["amount"]
         category = result["category"]
@@ -274,7 +285,7 @@ def main():
     app.add_handler(CommandHandler("analysis", analysis))
     app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_message))
     app.add_handler(MessageHandler(filters.VOICE, handle_voice))
-    app.job_queue.run_repeating(send_compliments, interval=3600, first=10)
+    app.job_queue.run_repeating(send_compliments, interval=3600, first=3600)
     print("Бот запущен!")
     app.run_polling()
 
